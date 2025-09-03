@@ -1,0 +1,62 @@
+package com.scb.axessspringboottraining.controller;
+
+import com.scb.axessspringboottraining.entity.Approval;
+import com.scb.axessspringboottraining.dto.ApprovalDto;
+import com.scb.axessspringboottraining.service.ApprovalService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/approvals")
+@CrossOrigin(origins = "*")
+public class ApprovalController {
+
+    @Autowired
+    private ApprovalService approvalService;
+
+    // Create approvals for a payroll batch (Send to Approvers)
+    // Frontend should post a list of approver USER IDs, not names.
+    @PostMapping("/batch/{batchId}")
+    public ResponseEntity<String> createApprovalsForBatch(
+        @PathVariable Long batchId,
+        @RequestBody List<Long> approverIds
+    ) {
+        approvalService.createApprovalsForBatch(batchId, approverIds);
+        return ResponseEntity.ok("Approvals created successfully");
+    }
+
+    // Process approval (an approver approves/rejects a batch)
+    @PostMapping("/{approvalId}/process")
+    public ResponseEntity<Approval> processApproval(
+        @PathVariable Long approvalId,
+        @RequestBody ApprovalDto approvalDto
+    ) {
+        Approval updated = approvalService.processApproval(
+            approvalId, approvalDto.getDecision(), approvalDto.getComments());
+        return ResponseEntity.ok(updated);
+    }
+
+    // Get all pending approvals (for dashboard/notification)
+    @GetMapping("/pending")
+    public ResponseEntity<List<Approval>> getPendingApprovals() {
+        List<Approval> pending = approvalService.getPendingApprovals();
+        return ResponseEntity.ok(pending);
+    }
+
+    // Get all approvals for a given batch (batch approval history)
+    @GetMapping("/batch/{batchId}")
+    public ResponseEntity<List<Approval>> getApprovalsByBatch(@PathVariable Long batchId) {
+        List<Approval> history = approvalService.getApprovalsByBatch(batchId);
+        return ResponseEntity.ok(history);
+    }
+
+    // (Optional) Get all approvals for admin
+    @GetMapping("")
+    public ResponseEntity<List<Approval>> getAllApprovals() {
+        List<Approval> all = approvalService.getAllApprovals();
+        return ResponseEntity.ok(all);
+    }
+}
