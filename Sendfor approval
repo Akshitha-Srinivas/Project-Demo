@@ -1,0 +1,50 @@
+const sendForApproval = async () => {
+  if (selectedApprovers.length === 0) {
+    alert('You must select at least one approver!');
+    return;
+  }
+
+  // 1. Create batch in backend
+  const token = localStorage.getItem('jwtToken');
+  const batchDetails = {
+    transactions,
+    totalAmount: getTotalAmount(),
+    createdAt: new Date().toISOString(),
+    status: 'pending'
+  };
+  const batchResponse = await fetch('http://localhost:8080/api/payroll_batches', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(batchDetails)
+  });
+
+  if (!batchResponse.ok) {
+    alert('Batch creation failed!');
+    return;
+  }
+  const batch = await batchResponse.json();
+  const batchId = batch.id;
+
+  // 2. Send for approval to all approvers
+  const approverIds = selectedApprovers.map(a => a.id); // Or MOCK_PEOPLE.map(a => a.id)
+  const approvalResponse = await fetch(`http://localhost:8080/api/approvals/batch/${batchId}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(approverIds)
+  });
+
+  if (approvalResponse.ok) {
+    setTransactions([]);
+    setSelectedApprovers([]);
+    setShowApprovalModal(false);
+    alert(`Batch sent to approval for ALL approvers!`);
+  } else {
+    alert('Failed to assign approvers.');
+  }
+};
