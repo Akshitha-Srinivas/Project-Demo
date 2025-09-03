@@ -1,0 +1,44 @@
+package com.scb.axessspringboottraining.service;
+
+import com.scb.axessspringboottraining.entity.Approval;
+import com.scb.axessspringboottraining.entity.PayrollBatch;
+import com.scb.axessspringboottraining.repository.ApprovalRepository;
+import com.scb.axessspringboottraining.repository.PayrollBatchRepository;
+import com.scb.axessspringboottraining.dto.BatchReportDto;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+public class ReportingService {
+
+    @Autowired
+    private PayrollBatchRepository batchRepository;
+    @Autowired
+    private ApprovalRepository approvalRepository;
+
+    public BatchReportDto convertToBatchReportDto(PayrollBatch batch) {
+        BatchReportDto dto = new BatchReportDto();
+        dto.setBatchReference(batch.getBatchReference());
+        dto.setStatus(batch.getStatus());
+        dto.setTotalAmount(batch.getTotalAmount());
+        dto.setTotalTransactions(batch.getTotalTransactions());
+        dto.setRequiredApprovals(batch.getRequiredApprovals());
+        dto.setCreatedAt(batch.getCreatedAt());
+        dto.setSubmittedAt(batch.getSubmittedAt());
+        dto.setProcessedAt(batch.getProcessedAt());
+
+        List<Approval> approvals = approvalRepository.findByBatch(batch);
+        List<String> approverNames = approvals.stream()
+            .map(Approval::getApproverName) // Returns String
+            .collect(Collectors.toList());
+
+        dto.setApproverNames(approverNames);
+
+        return dto;
+    }
+
+    // Other reporting methods as needed
+}
