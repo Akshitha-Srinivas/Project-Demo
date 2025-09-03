@@ -1,0 +1,61 @@
+package com.scb.axessspringboottraining.service;
+
+import com.scb.axessspringboottraining.entity.Approval;
+import com.scb.axessspringboottraining.entity.AppUser;
+import com.scb.axessspringboottraining.entity.PayrollBatch;
+import com.scb.axessspringboottraining.repository.ApprovalRepository;
+import com.scb.axessspringboottraining.repository.AppUserRepository;
+import com.scb.axessspringboottraining.repository.PayrollBatchRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import java.time.LocalDateTime;
+import java.util.List;
+
+@Service
+public class ApprovalService {
+    @Autowired
+    private ApprovalRepository approvalRepository;
+    @Autowired
+    private PayrollBatchRepository batchRepository;
+    @Autowired
+    private AppUserRepository appUserRepository;
+
+    public void createApprovalsForBatch(Long batchId, List<Long> approverIds) {
+        PayrollBatch batch = batchRepository.findById(batchId)
+            .orElseThrow(() -> new RuntimeException("Batch not found"));
+
+        for (Long approverId : approverIds) {
+            AppUser approver = appUserRepository.findById(approverId)
+                .orElseThrow(() -> new RuntimeException("Approver not found"));
+
+            Approval approval = new Approval();
+            approval.setBatch(batch);
+            approval.setApprover(approver);
+            approval.setStatus("PENDING");
+            approval.setCreatedAt(LocalDateTime.now());
+            approvalRepository.save(approval);
+        }
+    }
+
+    public Approval processApproval(Long approvalId, String decision, String comments) {
+        Approval approval = approvalRepository.findById(approvalId)
+            .orElseThrow(() -> new RuntimeException("Approval not found"));
+
+        approval.setStatus(decision); // "APPROVED" or "REJECTED"
+        approval.setComments(comments);
+        approval.setApprovedAt(LocalDateTime.now());
+
+        return approvalRepository.save(approval);
+    }
+
+    public List<Approval> getPendingApprovals() {
+        return approvalRepository.findByStatus("PENDING");
+    }
+
+    public List<Approval> getApprovalsByBatch(Long batchId) {
+        PayrollBatch batch = batchRepository.findById(batchId)
+            .orElseThrow(() -> new RuntimeException("Batch not found"));
+
+        return approvalRepository.findByBatch(batch);
+    }
+}
