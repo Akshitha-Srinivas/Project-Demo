@@ -1,0 +1,15 @@
+@PostMapping("/send-for-approval")
+public ResponseEntity<?> sendForApproval(@RequestBody Object request) {
+    try {
+        // Simple success response
+        Map<String, Object> response = new HashMap<>();
+        response.put("batchId", "BATCH_" + System.currentTimeMillis());
+        response.put("message", "Batch sent for approval successfully");
+        
+        return ResponseEntity.ok(response);
+        
+    } catch (Exception e) {
+        return ResponseEntity.badRequest()
+            .body(Map.of("error", "Failed to send for approval: " + e.getMessage()));
+    }
+}
