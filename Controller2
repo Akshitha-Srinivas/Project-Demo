@@ -1,0 +1,28 @@
+@RestController
+@RequestMapping("/api/payrollbatch")
+public class PayrollBatchController {
+
+    @PostMapping("/send-for-approval")
+    public ResponseEntity<Map<String, Object>> sendForApproval(@RequestBody Map<String, Object> request) {
+        try {
+            System.out.println("Received request: " + request);
+            
+            // Create response
+            Map<String, Object> response = new HashMap<>();
+            response.put("batchId", "BATCH_" + System.currentTimeMillis());
+            response.put("message", "Batch sent for approval successfully");
+            
+            System.out.println("Sending response: " + response);
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            System.err.println("Error in sendForApproval: " + e.getMessage());
+            e.printStackTrace();
+            
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Failed to send for approval: " + e.getMessage());
+            return ResponseEntity.status(500).body(errorResponse);
+        }
+    }
+}
