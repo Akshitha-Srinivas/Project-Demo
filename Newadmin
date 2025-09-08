@@ -1,0 +1,171 @@
+import React, { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
+
+function Admin() {
+  // States
+  const [approvers, setApprovers] = useState([]);
+  const [selectedApprovers, setSelectedApprovers] = useState([]);
+  const [showModal, setShowModal] = useState(false);
+  const [modalMessage, setModalMessage] = useState('');
+  const [batchId, setBatchId] = useState(null);
+  const [transactions, setTransactions] = useState([]);
+  const [batchInfo, setBatchInfo] = useState({ batchName: "September Payroll" });
+  // Add other states as needed (file input, bulk transactions, etc.)
+
+  const fileInputRef = useRef();
+
+  // Fetch approvers when component mounts
+  useEffect(() => {
+    axios.get('/api/users/approvers')
+      .then(response => setApprovers(response.data))
+      .catch(error => console.error("Error fetching approvers:", error));
+  }, []);
+
+  // Checkbox handler for selecting approver IDs
+  const handleCheckboxChange = (id) => {
+    setSelectedApprovers(prev =>
+      prev.includes(id) ? prev.filter(aid => aid !== id) : [...prev, id]
+    );
+  };
+
+  // Send batch for approval
+  const handleSendForApproval = async () => {
+    const payload = {
+      batch: {
+        ...batchInfo,
+        transactions: transactions,
+      },
+      approvers: selectedApprovers,
+    };
+
+    try {
+      const response = await axios.post('/api/payrollbatch/send-for-approval', payload);
+      const returnedBatchId = response.data.batchId || response.data.id; // Use the field backend returns
+      setBatchId(returnedBatchId);
+      setModalMessage(`Data sent for approval! Batch ID: ${returnedBatchId}.`);
+      setShowModal(true);
+    } catch (error) {
+      setModalMessage('Error: Approval request could not be sent.');
+      setShowModal(true);
+    }
+  };
+
+  // Modal close
+  const handleCloseModal = () => setShowModal(false);
+
+  // Transaction removal example
+  const removeTransaction = (id) => {
+    setTransactions(prev => prev.filter(t => t.id !== id));
+  };
+
+  // Transaction add example (update with your CSV/file logic)
+  const addTransaction = (txn) => {
+    setTransactions(prev => [...prev, txn]);
+  };
+
+  // Render
+  return (
+    <div style={{ padding: "1rem" }}>
+      <h2>Payroll Batch Approval</h2>
+
+      {/* Approver Table */}
+      <h4>Select Approvers</h4>
+      <table border="1" cellPadding="8" style={{ marginBottom: '1rem' }}>
+        <thead>
+          <tr>
+            <th>Select</th>
+            <th>Name</th>
+            <th>Email</th>
+          </tr>
+        </thead>
+        <tbody>
+          {approvers.map(user => (
+            <tr key={user.id}>
+              <td>
+                <input
+                  type="checkbox"
+                  checked={selectedApprovers.includes(user.id)}
+                  onChange={() => handleCheckboxChange(user.id)}
+                />
+              </td>
+              <td>{user.name}</td>
+              <td>{user.email}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Transactions Table (if any) */}
+      <h4>Batch Transactions</h4>
+      <table border="1" cellPadding="8" style={{ marginBottom: '1rem' }}>
+        <thead>
+          <tr>
+            <th>Bank ID</th>
+            <th>Account</th>
+            <th>Name</th>
+            <th>Amount</th>
+            <th>Remarks</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {transactions.map(txn => (
+            <tr key={txn.id}>
+              <td>{txn.bankId}</td>
+              <td>{txn.accountNumber}</td>
+              <td>{txn.name}</td>
+              <td>{txn.amount}</td>
+              <td>{txn.remarks}</td>
+              <td>
+                <button onClick={() => removeTransaction(txn.id)}>Delete</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Approval Button */}
+      <button
+        className="btn btn-success"
+        onClick={handleSendForApproval}
+        disabled={selectedApprovers.length === 0 || transactions.length === 0}
+      >
+        Send for Approval
+      </button>
+
+      {/* Modal */}
+      {showModal && (
+        <>
+          <div
+            style={{
+              position: 'fixed',
+              top: '30%',
+              left: '50%',
+              transform: 'translate(-50%,-50%)',
+              background: '#fff',
+              padding: '2rem',
+              borderRadius: '8px',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.16)',
+              zIndex: 1000,
+            }}
+          >
+            <h4>{modalMessage}</h4>
+            <button onClick={handleCloseModal}>Close</button>
+          </div>
+          <div
+            style={{
+              position: 'fixed',
+              top: 0, left: 0,
+              width: '100vw', height: '100vh',
+              background: 'rgba(0,0,0,0.2)',
+              zIndex: 999,
+            }}
+            onClick={handleCloseModal}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+export default Admin;
