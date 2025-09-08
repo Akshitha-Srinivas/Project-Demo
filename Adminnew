@@ -1,0 +1,256 @@
+import React, { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
+
+function Admin() {
+  // Transaction & batch states
+  const [transactions, setTransactions] = useState([]);
+  const [bulkTransactions, setBulkTransactions] = useState([]);
+  const [showBulkUpload, setShowBulkUpload] = useState(false);
+  const [singleForm, setSingleForm] = useState({
+    bankId: '',
+    accountNumber: '',
+    name: '',
+    amount: '',
+    remarks: '',
+  });
+  const [batchInfo, setBatchInfo] = useState({ batchName: 'September Payroll' });
+
+  // Approvers and approval states
+  const [approvers, setApprovers] = useState([]);
+  const [selectedApprovers, setSelectedApprovers] = useState([]);
+  const [showModal, setShowModal] = useState(false);
+  const [modalMessage, setModalMessage] = useState('');
+  const [batchId, setBatchId] = useState(null);
+
+  const fileInputRef = useRef();
+
+  // Fetch approvers
+  useEffect(() => {
+    axios.get('/api/users/approvers')
+      .then(response => setApprovers(response.data))
+      .catch(error => console.error("Error fetching approvers:", error));
+  }, []);
+
+  // Single transaction form handling
+  const handleSingleFormChange = (field, value) => {
+    setSingleForm(prev => ({ ...prev, [field]: value }));
+  };
+  const addSingleTransaction = () => {
+    if (Object.values(singleForm).every(field => field.trim() !== '')) {
+      const newTransaction = {
+        ...singleForm,
+        id: Date.now().toString(),
+        amount: parseFloat(singleForm.amount),
+      };
+      setTransactions(prev => [...prev, newTransaction]);
+      setSingleForm({ bankId: '', accountNumber: '', name: '', amount: '', remarks: '' });
+    } else {
+      alert('All fields are mandatory!');
+    }
+  };
+
+  // Bulk CSV Upload
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const text = e.target.result;
+          const lines = text.split('\n');
+          const headers = lines[0].split(',').map(h => h.trim());
+          const parsedTransactions = lines.slice(1)
+            .filter(line => line.trim())
+            .map((line, index) => {
+              const values = line.split(',').map(v => v.trim());
+              return {
+                id: Date.now() + index,
+                bankId: values[0] || '',
+                accountNumber: values[1] || '',
+                name: values[2] || '',
+                amount: parseFloat(values[3] || '0'),
+                remarks: values[4] || '',
+                isValid: values.every(v => v && v.trim()),
+              };
+            });
+          setBulkTransactions(parsedTransactions);
+          setShowBulkUpload(true);
+        } catch (error) {
+          alert('Error parsing CSV file');
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+  const addBulkTransactions = () => {
+    const validTransactions = bulkTransactions.filter(t => t.isValid);
+    if (validTransactions.length === 0) {
+      alert('No valid transactions to add!');
+      return;
+    }
+    setTransactions(prev => [...prev, ...validTransactions]);
+    setBulkTransactions([]);
+    setShowBulkUpload(false);
+  };
+
+  // Transaction removal
+  const removeTransaction = (id) => {
+    setTransactions(prev => prev.filter(t => t.id !== id));
+  };
+
+  // Approver checkbox handler
+  const handleCheckboxChange = (id) => {
+    setSelectedApprovers(prev =>
+      prev.includes(id) ? prev.filter(aid => aid !== id) : [...prev, id]
+    );
+  };
+
+  // Send for approval
+  const handleSendForApproval = async () => {
+    // If you want to send to all approvers automatically:
+    const approverIds = approvers.map(a => a.id);
+    const payload = {
+      batch: {
+        ...batchInfo,
+        transactions: transactions,
+      },
+      approvers: approverIds,
+    };
+
+    try {
+      const response = await axios.post('/api/payrollbatch/send-for-approval', payload);
+      const returnedBatchId = response.data.batchId || response.data.id;
+      setBatchId(returnedBatchId);
+      setModalMessage(`Data sent for approval! Batch ID: ${returnedBatchId}.`);
+      setShowModal(true);
+    } catch (error) {
+      setModalMessage('Error: Approval request could not be sent.');
+      setShowModal(true);
+    }
+  };
+
+  const handleCloseModal = () => setShowModal(false);
+
+  // Table/Design (minimal - adjust className/style as per your CSS)
+  return (
+    <div style={{ padding: "2rem", maxWidth: "900px", margin: "auto" }}>
+      <h2 style={{ color: "#00754a" }}>Payroll Batch Approval</h2>
+
+      {/* Single Transaction Form */}
+      <div style={{ marginBottom: "1rem", border: "1px solid #eee", padding: "1rem" }}>
+        <h3>Single Transaction Entry</h3>
+        <input placeholder="Bank ID" value={singleForm.bankId} onChange={e => handleSingleFormChange('bankId', e.target.value)} />
+        <input placeholder="Account" value={singleForm.accountNumber} onChange={e => handleSingleFormChange('accountNumber', e.target.value)} />
+        <input placeholder="Name" value={singleForm.name} onChange={e => handleSingleFormChange('name', e.target.value)} />
+        <input placeholder="Amount" type="number" value={singleForm.amount} onChange={e => handleSingleFormChange('amount', e.target.value)} />
+        <input placeholder="Remarks" value={singleForm.remarks} onChange={e => handleSingleFormChange('remarks', e.target.value)} />
+        <button onClick={addSingleTransaction}>Add Transaction</button>
+      </div>
+
+      {/* Bulk CSV Upload */}
+      <div style={{ marginBottom: "1rem", border: "1px solid #eee", padding: "1rem" }}>
+        <h3>Bulk Upload</h3>
+        <input
+          type="file"
+          ref={fileInputRef}
+          accept=".csv"
+          onChange={handleFileUpload}
+        />
+        {showBulkUpload && (
+          <div>
+            <h4>Preview Bulk Transactions</h4>
+            <button onClick={addBulkTransactions}>Add Bulk Transactions</button>
+            <ul>
+              {bulkTransactions.map(txn => (
+                <li key={txn.id} style={{ color: txn.isValid ? "black" : "red" }}>
+                  {txn.bankId}, {txn.accountNumber}, {txn.name}, {txn.amount}, {txn.remarks}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {/* Transactions Table */}
+      <h3 style={{ color: "#222" }}>Current Batch</h3>
+      <table border="1" cellPadding="8" style={{ width: "100%", marginBottom: '1rem' }}>
+        <thead>
+          <tr>
+            <th>Bank ID</th>
+            <th>Account</th>
+            <th>Name</th>
+            <th>Amount</th>
+            <th>Remarks</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {transactions.map(txn => (
+            <tr key={txn.id}>
+              <td>{txn.bankId}</td>
+              <td>{txn.accountNumber}</td>
+              <td>{txn.name}</td>
+              <td>{txn.amount}</td>
+              <td>{txn.remarks}</td>
+              <td>
+                <button onClick={() => removeTransaction(txn.id)} style={{ color: "red" }}>🗑</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ fontWeight: "bold", marginBottom: "1rem" }}>
+        Total Amount: ₹{transactions.reduce((sum, t) => sum + (t.amount || 0), 0)}
+      </div>
+
+      {/* Send for Approval */}
+      <button
+        onClick={handleSendForApproval}
+        style={{
+          background: "#28a745", color: "white", padding: "0.5rem 1.5rem",
+          borderRadius: "4px", border: "none", fontWeight: "bold"
+        }}
+        disabled={transactions.length === 0}
+      >
+        Send for Approval
+      </button>
+
+      {/* Success Modal */}
+      {showModal && (
+        <>
+          <div
+            style={{
+              position: 'fixed',
+              top: '35%',
+              left: '50%',
+              transform: 'translate(-50%,-50%)',
+              background: '#fff',
+              padding: '2rem',
+              borderRadius: '10px',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.16)',
+              zIndex: 1000,
+              minWidth: "320px"
+            }}
+          >
+            <h3 style={{ color: "#00754a" }}>{modalMessage}</h3>
+            <button
+              style={{ marginTop: "1rem", background: "#00754a", color: "white", padding: "0.5rem 1rem", borderRadius: "4px", border: "none" }}
+              onClick={handleCloseModal}>Close</button>
+          </div>
+          <div
+            style={{
+              position: 'fixed',
+              top: 0, left: 0,
+              width: '100vw', height: '100vh',
+              background: 'rgba(0,0,0,0.1)',
+              zIndex: 999,
+            }}
+            onClick={handleCloseModal}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+export default Admin;
