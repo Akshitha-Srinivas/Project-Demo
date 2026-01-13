@@ -1,0 +1,81 @@
+private void processNestedXlsx(String nestedUrl, String nestedFileName, 
+                              Instant lastMod, String artiFileName, String sourceUrl) {
+    if (alreadyProcessed(sourceUrl, nestedFileName, lastMod)) {
+        log.debug("Skipping: {}", nestedFileName);
+        return;
+    }
+    
+    log.info("Downloading: {} -> {}", nestedFileName, nestedUrl);
+    
+    HttpHeaders headers = new HttpHeaders();
+    headers.set("X-JFrog-Art-Api", apiKey);
+    headers.set("Accept", "*/*");
+    HttpEntity<String> entity = new HttpEntity<>(headers);
+    
+    ResponseEntity<byte[]> response;
+    try {
+        response = restTemplate.exchange(nestedUrl, HttpMethod.GET, entity, byte[].class);
+        
+        if (!response.getStatusCode().is2xxSuccessful()) {
+            log.error("HTTP {} downloading {}: {}", 
+                response.getStatusCode(), nestedUrl, response.getBody());
+            return;
+        }
+        
+    } catch (HttpClientErrorException e) {
+        log.error("HTTP {}: {} - {}", e.getStatusCode(), nestedUrl, e.getResponseBodyAsString());
+        return;
+    } catch (Exception e) {
+        log.error("Failed to download {}: {}", nestedUrl, e.getMessage());
+        return;
+    }
+    
+    byte[] nestedData = response.getBody();
+    if (nestedData == null || nestedData.length == 0) {
+        log.warn("Empty response from {}", nestedUrl);
+        return;
+    }
+    
+    // Parse XLSX
+    try (Workbook wb = WorkbookFactory.create(new ByteArrayInputStream(nestedData));
+         Sheet sheet = wb.getSheetAt(0)) {
+        
+        log.info("Parsed {} rows from {}", sheet.getLastRowNum(), nestedFileName);
+        
+        for (Row row : sheet) {
+            if (row.getRowNum() == 0) continue;
+            
+            // Dynamic ALL columns
+            Map<String, Object> allData = new HashMap<>();
+            for (int col = 0; col < row.getLastCellNum(); col++) {
+                Cell cell = row.getCell(col);
+                if (cell != null) {
+                    String colName = CellReference.convertNumToColString(col);
+                    allData.put(colName, getCellValue(cell));
+                }
+            }
+            
+            String serv = getString(allData.get("A")); // Server column A
+            if (serv == null || serv.trim().isEmpty()) continue;
+            
+            // Upsert
+            String sql = """
+                INSERT INTO keystone_all_data 
+                (arti_file_name, nested_file_name, nested_file_url, last_modified,
+                 serv, raw_row)
+                VALUES (?, ?, ?, ?, ?, ?::jsonb)
+                ON CONFLICT (arti_file_name, nested_file_name, serv) 
+                DO UPDATE SET raw_row = EXCLUDED.raw_row, last_modified = EXCLUDED.last_modified
+            """;
+            
+            jdbcTemplate.update(sql, artiFileName, nestedFileName, nestedUrl, 
+                lastMod, serv, objectMapper.writeValueAsString(allData));
+        }
+        
+        markProcessed(sourceUrl, nestedFileName, lastMod);
+        log.info("✅ Processed {} ({} rows)", nestedFileName, sheet.getLastRowNum());
+        
+    } catch (Exception e) {
+        log.error("❌ Failed to parse XLSX {}: {}", nestedFileName, e.getMessage(), e);
+    }
+}
