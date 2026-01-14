@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.0</version>
+    </parent>
+    <groupId>com.example</groupId>
+    <artifactId>infra-json-postgres</artifactId>
+    <version>0.0.1</version>
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+    </dependencies>
+    <build><plugins>
+        <plugin>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-maven-plugin</artifactId>
+        </plugin>
+    </plugins></build>
+</project>
+
+
+
+
+
+
+
+
+
+spring.datasource.url=jdbc:postgresql://localhost:5432/infra_db
+spring.datasource.username=postgres
+spring.datasource.password=yourpassword
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+spring.jpa.properties.hibernate.jdbc.lob.non_contextual_creation=true
+spring.jpa.show-sql=true
+logging.level.org.hibernate.SQL=DEBUG
+
+
+
+
+
+
+
+
+
+
+
+
+package com.example.infra.entity;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+import java.time.LocalDateTime;
+
+@Entity
+@Table(name = "infra_data")
+public class InfraData {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, unique = true)
+    private String canonicAlias;
+
+    @Column(name = "data", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private JsonNode data;
+
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt = LocalDateTime.now();
+
+    // Constructors, getters, setters
+    public InfraData() {}
+
+    public String getCanonicAlias() { return canonicAlias; }
+    public void setCanonicAlias(String canonicAlias) { this.canonicAlias = canonicAlias; }
+    public JsonNode getData() { return data; }
+    public void setData(JsonNode data) { this.data = data; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+package com.example.infra.repository;
+
+import com.example.infra.entity.InfraData;
+import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.Optional;
+
+public interface InfraDataRepository extends JpaRepository<InfraData, Long> {
+    Optional<InfraData> findByCanonicAlias(String canonicAlias);
+}
+
+
+
+
+
+
+
+
+
+
+
+package com.example.infra.service;
+
+import com.example.infra.entity.InfraData;
+import com.example.infra.repository.InfraDataRepository;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.Resource;
+import org.springframework.stereotype.Service;
+import jakarta.annotation.PostConstruct;
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.util.List;
+
+@Service
+public class InfraDataService {
+    private final InfraDataRepository repository;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public InfraDataService(InfraDataRepository repository) {
+        this.repository = repository;
+    }
+
+    @PostConstruct
+    public void loadAndUpsertFromJson() throws IOException {
+        Resource resource = new ClassPathResource("data/infra.json");
+        JsonNode root = objectMapper.readTree(resource.getInputStream());
+        List<JsonNode> records = root.isArray() 
+            ? objectMapper.readValue(root.traverse(), new TypeReference<>() {}) 
+            : List.of(root);
+
+        int count = 0;
+        for (JsonNode node : records) {
+            String alias = node.get("canonic_alias").asText();
+            InfraData entity = repository.findByCanonicAlias(alias).orElse(new InfraData());
+            entity.setCanonicAlias(alias);
+            entity.setData(node);
+            entity.setUpdatedAt(LocalDateTime.now());
+            repository.save(entity);
+            count++;
+        }
+        System.out.println("Upserted " + count + " records from infra.json");
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+package com.example.infra.controller;
+
+import com.example.infra.entity.InfraData;
+import com.example.infra.repository.InfraDataRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RestController;
+import java.util.List;
+
+@RestController
+public class InfraController {
+    @Autowired
+    private InfraDataRepository repository;
+
+    @GetMapping("/infra")
+    public List<InfraData> getAll() {
+        return repository.findAll();
+    }
+
+    @GetMapping("/infra/{alias}")
+    public InfraData getByAlias(@PathVariable String alias) {
+        return repository.findByCanonicAlias(alias).orElse(null);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+package com.example.infra;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class InfraApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(InfraApplication.class, args);
+    }
+}
+
+
+
+
+
+
+
+
+
+
+-- Create DB first: CREATE DATABASE infra_db;
+-- View table (auto-created)
+d infra_data;
+
+-- Query example
+SELECT canonic_alias, data->>'ip_address' as ip, data->>'vcpu' as vcpu 
+FROM infra_data;
+
+-- Update via JSON
+UPDATE infra_data SET data = data || '{"new_field": "value"}'::jsonb 
+WHERE canonic_alias = 'server-001';
+
+
+
+
+
+
+
+
+
+
+
+
+-- Create database first (run as postgres superuser)
+CREATE DATABASE infra_db;
+
+-- Connect to infra_db and run this:
+CREATE TABLE infra_data (
+    id BIGSERIAL PRIMARY KEY,
+    canonic_alias VARCHAR(255) UNIQUE NOT NULL,
+    data JSONB NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Essential indexes for performance
+CREATE INDEX idx_canonic_alias ON infra_data(canonic_alias);
+CREATE INDEX idx_data_gin ON infra_data USING GIN(data);
+
+-- Verify table created
+d infra_data; 
+
+
+
+
+
+
+
+
+
+
